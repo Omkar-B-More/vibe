@@ -23,8 +23,10 @@
 //     return { output };
 //   },
 // );
+import { Sandbox } from "@e2b/code-interpreter";
 import { inngest } from "./client";
 import { GoogleGenAI } from "@google/genai";
+import { getSandbox } from "./utils";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY!,
@@ -37,14 +39,25 @@ export const helloWorld = inngest.createFunction(
       event: "test/hello.world",
     },
   },
-  async ({ event }) => {
+  async ({ event, step }) => {
+    const sandboxId = await step.run("get-sandbox-id", async () => {
+      const sandbox = await Sandbox.create("omkars-project-54ce/vibe-dev--test");
+      return sandbox.sandboxId;
+    });
     const codeAgent = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: `You are an expert next.js developer.You write readable, maintanable code.You write simple Next.js & React snippets.:\n\n${event.data.value}`,
     });
 
+    const sandboxUrl = await step.run("get-sandbox-url", async () => {
+      const sandbox = await getSandbox(sandboxId);
+      const host = sandbox.getHost(3000);
+      return `https://${host}`;
+    })
+
     return {
       output: codeAgent.text,
+      sandboxUrl
     };
   }
 );
