@@ -1,8 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useState } from "react";
+import { EyeIcon, CodeIcon, CrownIcon } from "lucide-react";
 
 import { Fragment } from "@/generated/prisma/client";
+import { Button } from "@/components/ui/button";
+import { UserControl } from "@/components/user-control";
+import { FileExplorer } from "@/components/file-explorer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ResizableHandle,
@@ -10,14 +15,9 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 
+import { FragmentWeb } from "../components/fragment-web";
 import { ProjectHeader } from "../components/project-header";
 import { MessagesContainer } from "../components/messages-container";
-import { FragmentWeb } from "../components/fragment-web";
-import { CodeIcon, CrownIcon, EyeIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { CodeView } from "@/components/code-view";
-import { FileExplorer } from "@/components/file-explorer";
 
 interface Props {
   projectId: string;
@@ -25,24 +25,25 @@ interface Props {
 
 export const ProjectView = ({ projectId }: Props) => {
   const [activeFragment, setActiveFragment] = useState<Fragment | null>(null);
-  const [tabState, SetTabState] = useState<"preview" | "code">("preview");
-  
+  const [tabState, setTabState] = useState<"preview" | "code">("preview");
+
   return (
     <div className="h-screen">
-      <ResizablePanelGroup orientation="horizontal">
+      <ResizablePanelGroup direction="horizontal">
         <ResizablePanel
           defaultSize={35}
           minSize={20}
           className="flex flex-col min-h-0"
         >
           <Suspense fallback={<p>Loading project...</p>}>
-          <ProjectHeader projectId={projectId} />
+            <ProjectHeader projectId={projectId} />
           </Suspense>
           <Suspense fallback={<p>Loading messages...</p>}>
             <MessagesContainer
-             projectId={projectId}
-             activeFragment={activeFragment}
-             setActiveFragment={setActiveFragment} />
+              projectId={projectId}
+              activeFragment={activeFragment}
+              setActiveFragment={setActiveFragment}
+            />
           </Suspense>
         </ResizablePanel>
         <ResizableHandle className="hover:bg-primary transition-colors" />
@@ -50,10 +51,11 @@ export const ProjectView = ({ projectId }: Props) => {
           defaultSize={65}
           minSize={50}
         >
-          <Tabs className="h-full gap-y-0"
-          defaultValue="preview"
-          value={tabState}
-          onValueChange={(value) => SetTabState(value as "preview" | "code")}
+          <Tabs
+            className="h-full gap-y-0"
+            defaultValue="preview"
+            value={tabState}
+            onValueChange={(value) => setTabState(value as "preview" | "code")}
           >
             <div className="w-full flex items-center p-2 border-b gap-x-2">
               <TabsList className="h-8 p-0 border rounded-md">
@@ -70,15 +72,16 @@ export const ProjectView = ({ projectId }: Props) => {
                     <CrownIcon /> Upgrade
                   </Link>
                 </Button>
+                <UserControl />
               </div>
             </div>
             <TabsContent value="preview">
-          {!!activeFragment && <FragmentWeb data={activeFragment} />}
+              {!!activeFragment && <FragmentWeb data={activeFragment} />}
             </TabsContent>
             <TabsContent value="code" className="min-h-0">
               {!!activeFragment?.files && (
                 <FileExplorer
-                  files={activeFragment.files as { [path: string]: string}}
+                  files={activeFragment.files as { [path: string]: string }}
                 />
               )}
             </TabsContent>
