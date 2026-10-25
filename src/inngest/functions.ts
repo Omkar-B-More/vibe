@@ -307,12 +307,11 @@
 //     };
 //   },
 // );
-
 import { Sandbox } from "@e2b/code-interpreter";
 import { inngest } from "./client";
 import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
 import { getSandbox } from "./utils";
-import { PROMPT } from "@/prompt";
+import { FRAGMENT_TITLE_PROMPT, PROMPT, RESPONSE_PROMPT } from "@/prompt";
 import { prisma } from "@/lib/db";
 // --- Tool definitions ---
 
@@ -428,6 +427,20 @@ async function generateWithRetry(params: any, retriesPerModel = 4): Promise<any>
   throw lastError;
 }
 
+// Helper: one-shot text generation with a system prompt (Gemini version of Antonio's
+// fragmentTitleGenerator / responseGenerator agents)
+async function generateText(systemPrompt: string, input: string): Promise<string> {
+  const res = await generateWithRetry({
+    contents: [{ role: "user", parts: [{ text: input }] }],
+    config: {
+      systemInstruction: systemPrompt,
+      temperature: 0.1,
+    },
+  });
+  const parts = res.candidates?.[0]?.content?.parts ?? [];
+  return parts.map((p: any) => p.text ?? "").join("").trim();
+}
+
 export const codeAgentFunction = inngest.createFunction(
   {
     id: "code-agent",
@@ -439,6 +452,30 @@ export const codeAgentFunction = inngest.createFunction(
     const sandboxId = await step.run("get-sandbox-id", async () => {
       const sandbox = await Sandbox.create("omkars-project-54ce/vibe-dev--test");
       return sandbox.sandboxId;
+    });
+
+    // Previous messages of this project, so the model remembers the conversation
+    const previousMessages = await step.run("get-previous-messages", async () => {
+      const messages = await prisma.message.findMany({
+        where: {
+          projectId: event.data.projectId,
+        },
+        orderBy: {
+          createdAt: "asc", // oldest first, the order Gemini expects
+        },
+      });
+
+      const history = messages.map((message) => ({
+        role: message.role === "ASSISTANT" ? "model" : "user",
+        parts: [{ text: message.content }],
+      }));
+
+      // Gemini history must start with a user turn
+      while (history.length > 0 && history[0].role === "model") {
+        history.shift();
+      }
+
+      return history;
     });
 
     async function runTerminal(command: string) {
@@ -492,6 +529,7 @@ export const codeAgentFunction = inngest.createFunction(
     let summary: string | undefined;
 
     const contents: any[] = [
+      ...previousMessages,
       { role: "user", parts: [{ text: event.data.value }] },
     ];
 
@@ -566,6 +604,30 @@ export const codeAgentFunction = inngest.createFunction(
 
     const isError = !summary || Object.keys(filesState).length === 0;
 
+    // Generate a short fragment title and a friendly reply from the summary (Gemini)
+    let fragmentTitle = "Fragment";
+    let responseText = summary ?? "";
+
+    if (!isError) {
+      fragmentTitle = await step.run("generate-fragment-title", async () => {
+        try {
+          return (await generateText(FRAGMENT_TITLE_PROMPT, summary!)) || "Fragment";
+        } catch (e) {
+          console.log("Title generation failed, using default:", e);
+          return "Fragment";
+        }
+      });
+
+      responseText = await step.run("generate-response", async () => {
+        try {
+          return (await generateText(RESPONSE_PROMPT, summary!)) || summary!;
+        } catch (e) {
+          console.log("Response generation failed, using summary:", e);
+          return summary!;
+        }
+      });
+    }
+
     const sandboxUrl = await step.run("get-sandbox-url", async () => {
       const sandbox = await getSandbox(sandboxId);
       const host = sandbox.getHost(3000);
@@ -576,7 +638,7 @@ export const codeAgentFunction = inngest.createFunction(
       if (isError) {
         return await prisma.message.create({
           data: {
-            projectId:event.data.projectId,
+            projectId: event.data.projectId,
             content: "Something went wrong. Please try again.",
             role: "ASSISTANT",
             type: "ERROR",
@@ -586,14 +648,14 @@ export const codeAgentFunction = inngest.createFunction(
 
       return await prisma.message.create({
         data: {
-          projectId:event.data.projectId,
-          content: summary!,
+          projectId: event.data.projectId,
+          content: responseText,
           role: "ASSISTANT",
           type: "RESULT",
           fragment: {
             create: {
               sandboxUrl: sandboxUrl,
-              title: "Fragment",
+              title: fragmentTitle,
               files: filesState,
             },
           },
@@ -603,7 +665,7 @@ export const codeAgentFunction = inngest.createFunction(
 
     return {
       url: sandboxUrl,
-      title: "Fragment",
+      title: fragmentTitle,
       files: filesState,
       summary,
     };
