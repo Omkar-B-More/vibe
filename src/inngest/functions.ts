@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Sandbox } from "@e2b/code-interpreter";
 import { inngest } from "./client";
 import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
